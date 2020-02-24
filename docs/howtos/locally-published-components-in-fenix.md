@@ -1,15 +1,39 @@
 # Using locally-published components in Fenix
 
-Note: This is a bit tedious, and you might like to try the substitution-based
-approach documented in [Development with the Reference Browser](./working-with-reference-browser.md).
-That approach is still fairly new, and the local-publishing approach in this document
-is necessary if it fails.
+It's often important to test work-in-progress changes to this repo against a real-world
+consumer project. The most reliable method of performing such testing is to publish your
+components to a local Maven repository, and adjust the consuming project to install them
+from there.
 
-Note 2: This is fenix-specific only in that some links on the page go to the
-`mozilla-mobile/fenix` repository, and that I'm describing `fenix`, however
-these steps should work for e.g. `reference-browser`, as well. (Same goes for
-lockwise, or any other consumer of our components, but they may use a different
-structure -- lockwise has no Dependencies.kt, for example)
+## Using the auto-publishing workflow
+
+Some consumers (notably [Fenix](https://github.com/mozilla-mobile/fenix/)) have support for
+automatically publishing and including a local development version of application-services
+in their build. The workflow is:
+
+1. Check out the consuming project.
+1. Edit (or create) the file `local.properties` *in the consuming project* and tell it where to
+   find your local checkout of application-services, by adding a line like:
+
+   `autoPublish.application-services.dir=path/to/your/checkout/of/application-services`
+
+1. Optionally, speed up your build by editing (or creating) the file `local.properties` *in
+   application-services* and instructing it to only build for certain target platforms:
+
+   ```
+   # You'll typically want "x86" when testing on an emulator,
+   # and either "arm" or "arm64" when testing on a physical device.
+   rust.targets=x86
+   ```
+
+1. Build the consuming project following its usual build procedure, e.g. via `./gradlew assembleDebug`.
+
+
+## Using a manual workflow
+
+Note: This is a bit tedious, and you should first try the auto-publishing workflow described
+above. But if the auto-publishing workflow bitrots then it's important to know how to do it
+by hand.
 
 1. Inside the `application-services` repository root:
     1. In [`.buildconfig-android.yml`](app-services-yaml), change
@@ -43,34 +67,28 @@ structure -- lockwise has no Dependencies.kt, for example)
 
     5. Run `./gradlew publishToMavenLocal`.
 
-3. Inside the `fenix` repository root:
+3. Inside the consuming project repository root:
     1. Inside [`build.gradle`](fenix-build-gradle-1), add
        `mavenLocal()` inside `allprojects { repositories { <here> } }`.
         1. If you added a new project to the megazord (e.g. you went through the
            parts of step 1) you must also add `mavenLocal()` to
            [`buildscript { ... dependencies { <here> }}`](fenix-build-gradle-2)
 
-    2. Inside fenix's `local.properties` file, ensure
-       `substitutions.application-services.dir` is *NOT* set.
+    2. Ensure that `local.properties` does not contain any configuration to
+       related to auto-publishing the application-services repo.
 
-    3. Inside [`buildSrc/src/main/java/Dependencies.kt`](fenix-deps), change
-       `mozilla_android_components` to the version you defined in step 3 part 1.
+    3. Inside [`buildSrc/src/main/java/Dependencies.kt`](fenix-deps), change the
+       version numbers for android-components and/or application-services to
+       match the new versions you defined above.
 
        Example: `const val mozilla_android_components = "0.51.0-TESTING3"`
-        1. If you added a new project to the megazord (e.g. you went through the
-           parts of step 1) you must also change `appservices_gradle_plugin` to
-           the version you defined in step 1 part 1.
 
-            Example: `const val appservices_gradle_plugin = "0.4.4-TESTING3"`
-        2. If there are any direct dependencies on application services (at the
-           moment there are not, but there have been in the past and may be in
-           the future), change it's version here to the one defined in step 2
-           part 1.
+       Example: `const val mozilla_appservices = "0.27.0-TESTING3"`
 
-You should now be able to build and run fenix (assuming you could before all
+You should now be able to build and run the consuming application (assuming you could before all
 this).
 
-## Caveats
+### Caveats
 
 1. This assumes you have followed the [android/rust build setup](./setup-android-build-environment.md)
 2. Make sure you're fully up to date in all repos, unless you know you need to
@@ -80,8 +98,35 @@ this).
    understandable to fix, you usually should be able to find a PR with the fixes
    somewhere in the android-component's list of pending PRs (or, failing that, a
    description of what to do in the application-services changelog).
-4. Ask in #rust-components slack (or #sync on mozilla IRC if you are an
-   especially brave external contributor) if you get stuck.
+4. Ask in #sync if you get stuck.
+
+
+## Adding support for the auto-publish workflow
+
+If you had to use the manual workflow about and found it incredibly tedious, you might like to
+try adding support for the auto-publish workflow to the consuming project. The details will differ
+depending on the specifics of the project's build setup, but at a high level you will need to:
+
+1. Locate (or add) the code for parsing the `local.properties` file, and add support for loading
+   a directory path from the property `autoPublish.application-services.dir`.  This is typically done in
+   [settings.gradle](https://github.com/mozilla-mobile/fenix/blob/0d398f7d44f877a61cd243ee9fac587a9d5c0a1f/settings.gradle#L31).
+1. When the key `autoPublish.application-services.dir` is present in `local.properties`, have your
+   build script do two things:
+   1. Spawn a subprocess to run this command in the specified directory:
+
+      `./gradlew publishToMavenLocal -Plocal=true`
+
+      This ensures that your local changes to application-servivces will be packages and published
+      for consumption.
+
+   1. Apply the build script from `./build-scripts/substitute-local-appservices.gradle` in the referenced
+      directory:
+
+      `apply from "${appServicesSrcDir}/build-scripts/substitute-local-appservices.gradle"`
+
+      This ensures that the project is configured to find and load the locally-published components
+      build by the step above.
+
 
 ---
 

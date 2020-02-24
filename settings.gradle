@@ -54,7 +54,9 @@ gradle.projectsLoaded { ->
     // Note that since this is set on "rootProject.ext", it will be "in scope" during the evaluation of all projects'
     // gradle files. This means that they can just access "config.<value>", and it'll function properly
     gradle.rootProject.ext.library = [
-        version: buildconfig.libraryVersion,
+        // You can use -Plocal=true to help with mavenLocal publishing workflow.
+        // It makes a make version number that's larger than any published version.
+        version: gradle.rootProject.hasProperty('local') ? '9999.0.0-LOCAL' : buildconfig.libraryVersion,
         groupId: buildconfig.groupId,
     ]
 }
